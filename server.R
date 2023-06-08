@@ -6,5 +6,12 @@ server <- function(input, output, session) {
   select_numeric_columns_Server("numeric_columns")
   c(currently_selected_interval_column, currently_selected_calculate_column) %<-% select_numeric_columns_Server("numeric_columns")
   
-  plotServer("main_plot", currently_selected_interval_column, currently_selected_calculate_column, currently_selected_interval_value)
+  plotServer("main_plot", 
+             currently_selected_interval_column, 
+             currently_selected_calculate_column, 
+             currently_selected_interval_value,
+             filter_range_vals)
+  
+  select_filter_range_Server("select_filter_range", currently_selected_interval_column)
+  filter_range_vals <- select_filter_range_Server("select_filter_range", currently_selected_interval_column)
 }

@@ -9,16 +9,29 @@ ui <- dashboardPage(
     fluidRow(
       column(4,
              wellPanel(
-              select_interval_value_UI("interval_value_selector"))
+              select_interval_value_UI("interval_value_selector")
+              )
              ),
       column(6,
              wellPanel(
-               select_numeric_columns_UI("numeric_columns"))
-      )
+               select_numeric_columns_UI("numeric_columns")
+               )
+             )
     ),
     fluidRow(
       column(12,
-             plotUI("main_plot"))
+             wellPanel(
+               style = "height: 740px; overflow-y: auto;",
+               plotUI("main_plot")
+             )
+             )
+    ),
+    fluidRow(
+      column(12,
+             wellPanel(
+               select_filter_range_UI("select_filter_range")
+               )
+             )
     )
     )
   )

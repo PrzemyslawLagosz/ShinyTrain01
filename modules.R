@@ -1,73 +1,4 @@
-library(tidyverse)
-library(ggplot2)
-library(shiny)
-library(rlang)
-library(zeallot)
-library(shinydashboard)
-
-#load("auta.Rdata") ######## TU JEST PROBLEM
-
-auta <- read_csv("auta.csv")
-
-mask1 <- quantile(auta$Przebieg.w.km, probs = 0.9995, na.rm= TRUE) 
-
-auta <- auta %>%
-  filter(Przebieg.w.km < mask1 & KM < 1100 & Pojemnosc.skokowa < 18000)
-
-# Columns used to filter main plot in APP
-numericColnames <- colnames(select_if(auta, is.numeric))
-
-##### FUNCTIONS #######
-interval_slider_values <- function(currently_selected_interval_column) {
-  switch(currently_selected_interval_column,
-         "Cena" = list(min = 10e+3, max = 10e+5, step = 10e+3, value = 5*10e+4),
-         "Cena.w.PLN" = list(min = 10e+3, max = 10e+5, step = 10e+3, value = 5*10e+4),
-         "KM" = list(min = 10, max = 100, step = 10, value = 50),
-         "kW" = list(min = 10, max = 100, step = 10, value = 50),
-         "Pojemnosc.skokowa" = list(min = 100, max = 1000, step = 100, value = 500),
-         "Przebieg.w.km" = list(min = 10e+3, max = 10e+5, step = 10e+3, value = 5*10e+4),
-         "Rok.produkcji" = list(min = 1, max = 10, step = 1, value = 5),
-  )
-}
-
-interval_group_by <- function(df, column_interval, column_calculate, interval = 5) {
-  #' @param DF to calculate
-  #' @param column_interval `STRING` <-  column turned into intervals with cut and group_by
-  #' @param column_calculate `STRING` <- column to calculate mean and median in intervals
-  #' @param interval `INTEGER` <- value of the interval
-  #' @return DATA FRAME grouped by @param column_interval and calculated mean, median for @param column_calculate
-  
-  df_grouped_by_interval <- df %>%
-    mutate(intervals = cut(!!sym(column_interval), 
-                           seq_last(!! sym(column_interval), interval), 
-                           include.lowest = TRUE)
-    ) %>%
-    group_by(intervals) %>%
-    summarise(mean_by_interval = mean(!! sym(column_calculate), na.rm = TRUE),
-              median_by_interval = median(!! sym(column_calculate), na.rm = TRUE),
-              n= n()) %>% 
-    drop_na()
-  
-  return(df_grouped_by_interval)
-}
-
-seq_last <- function(x, interval) {
-  #' @param x is vector
-  #' 
-  #' @return sequence like `seq()` function, but include last not full interval
-  #' 
-  #' 
-  my_seq <- seq(from = min(x), to = max(x), by = interval)
-  
-  if (tail(my_seq, 1) == max(x)) {
-    return(my_seq)
-  } else {
-    my_seq <- c(my_seq, max(x))
-    return(my_seq)
-  }
-}
-
-#interval_group_by(auta, "Rok.produkcji", "Cena", 10)
+source("helpers.R")
 
 #######   select_interval_value_MODULE ###########
 select_interval_value_UI <- function(id) {
@@ -79,6 +10,12 @@ select_interval_value_UI <- function(id) {
 }
 
 select_interval_value_Server <- function(id, currently_selected_interval_column) {
+  #' This module allows to select interval value, (range of value) which is passed to `plot_output_server`
+  #' 
+  #' @param currently_selected_interval_column - `str` column name recived from `select_numeric_columns_Server`
+  #' 
+  #' @return `input$interval_slider` - `int` value of interval (X axis)
+
   moduleServer(id, function(input, output, session) {
     
     slider_values <- reactive(
@@ -122,6 +59,11 @@ select_numeric_columns_UI <- function(id) {
 }
 
 select_numeric_columns_Server <- function(id) {
+  #' Allows to select only numeric values
+  #' 
+  #' @return `input$interval_column_selector` - `str` column name (X axis)
+  #' @return `input$calculate_column_selector` - `str` column name (Y axis)
+
   moduleServer(id, function(input, output, session) {
     
     list(
@@ -141,16 +83,17 @@ plotUI <- function(id) {
 plotServer <- function(id,
                        currently_selected_interval_column,
                        currently_selected_calculate_column,
-                       currently_selected_interval_value) {
+                       currently_selected_interval_value,
+                       filter_range_vals) {
+  
+  #' This module produce `plot_df` based on inputs, and render main_plot
+  #' 
+  #' @param currently_selected_interval_column  - `str` - receive from `select_numeric_columns_Server`
+  #' @param currently_selected_calculate_column - `str` - receive from `select_numeric_columns_Server`
+  #' @param currently_selected_interval_value   - `int` - receive from `select_interval_value_Server`
+  #' @param filter_range_vals                   - `list of 2 int` - receive from `select_filter_range_Server`
+  
   moduleServer(id, function(input, output, session) {
-    
-    
-    observeEvent(currently_selected_interval_column(), {
-      message("currently_selected_interval_column: ", currently_selected_interval_column(), "\n",
-              "currently_selected_calculate_column: ", currently_selected_calculate_column(), "\n",
-              "currently_selected_interval_value: ", currently_selected_interval_value(), "\n"
-              )
-    })
     
     plot_df <- reactive({
       req(currently_selected_interval_column(),
@@ -158,9 +101,10 @@ plotServer <- function(id,
           currently_selected_interval_value())
       
       interval_group_by(auta,
-                        currently_selected_interval_column(),
-                        currently_selected_calculate_column(),
-                        currently_selected_interval_value())
+                        column_interval = currently_selected_interval_column(),
+                        column_calculate = currently_selected_calculate_column(),
+                        interval = currently_selected_interval_value(),
+                        filter_range_vals = filter_range_vals())
     })
     
     output$main_plot <- renderPlot({
@@ -174,6 +118,7 @@ plotServer <- function(id,
         labs(
           title = sprintf("Mean %s", currently_selected_calculate_column()),
           subtitle = sprintf("Interval %s of %s", currently_selected_interval_value(),currently_selected_interval_column()),
+          fill = "Occurances",
           x = NULL,
           y = sprintf("%s", currently_selected_calculate_column())
         ) +
@@ -181,15 +126,50 @@ plotServer <- function(id,
         theme(legend.position="right",
               axis.text.x = element_text(angle = 45, vjust = 0.5)) +
         geom_hline(yintercept = mean(plot_df()$mean_by_interval )/1000,
-                   linetype='dashed')+
+                   linetype='dashed',
+                   color = rgb(190/255, 115/255, 38/255),
+                   size = 1)+
         annotate(geom = "text",
                  label = sprintf("Mean %s", currently_selected_calculate_column()),
                  y = mean(plot_df()$mean_by_interval )/1000,
                  x = nrow(plot_df())-1,
-                 vjust = -1)
-    })
+                 vjust = -1,
+                 color = rgb(190/255, 115/255, 38/255))
+    }, res = 96, height =650)
 })
 }
 
-# max(interval_group_by(auta, "Rok.produkcji", "Cena.w.PLN", 10)$mean_by_interval)
-# max(interval_group_by(auta, "Rok.produkcji", "KM", 10)$mean_by_interval)
+
+######  select_filter_range_MODULE ####
+
+select_filter_range_UI <- function(id) {
+  ns <- NS(id)
+  
+  sliderInput(ns("filter_range_slider"), "Filter range on X axis to zoom in/out", min = 1900, max = 2012, step = 1, value = c(1900, 2012))
+}
+
+select_filter_range_Server <- function(id, currently_selected_interval_column) {
+  
+  #' This module allows to filter whole data frame to ZOOM IN/OUT the plot, and cut the outliners.
+  #' It updated witch `swich()` based on `currently_selected_interval_column`
+  #' 
+  #' @param currently_selected_interval_column  - `str` - receive from `select_numeric_columns_Server`
+  #' 
+  #' @return `input$filter_range_slider` - `list of 2 int`, range of `currently_selected_interval_column`
+
+  moduleServer(id, function(input, output, session) {
+    
+    current_range <- reactive(range(auta[[currently_selected_interval_column()]]))
+    
+    observeEvent(currently_selected_interval_column(), {
+      updateSliderInput(session, 
+                        inputId = "filter_range_slider", 
+                        min = current_range()[1],
+                        max = current_range()[2],
+                        step = 1,
+                        value = current_range())
+    })
+    
+    reactive(input$filter_range_slider)
+})
+}
